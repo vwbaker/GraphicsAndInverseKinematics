@@ -33,18 +33,15 @@ using namespace glm;
 
 GLFWwindow *window; // Main application window
 string RESOURCE_DIR = ""; // Where the resources are loaded from
-shared_ptr<Program> prog, prog1, prog2, prog3; 
-shared_ptr<Shape> shape, cylinder, sphere, pyramid, bone;
+shared_ptr<Program> prog, prog1, prog2;
+shared_ptr<Shape> cylinder, sphere;
 
-Texture texture2, catTexture, ratTexture;
-GLint h_texture2, h_catTexture, h_ratTexture;
+Texture texture2;
 
 int g_width = 512;
 int g_height = 512;
 int g_GiboLen = 6;
 int gMat = 0;
-int FirstTime = 1;
-const int NUM_CREATURES = 40;
 int running = 0;
 bool attack = false;
 float thetaLeg = 0;
@@ -57,18 +54,6 @@ double xorig, yorig;
 int firsttime = 1;
 glm::vec3 target(0, 2.1, -2.98), eye(0, 2.1, 1.02);
 glm::vec3 cattarget(0, 0.9, -3.96), cateye(0, 0.9, -2.98); 
-
-typedef struct {
-	float x;
-	float z;
-	float rot;
-	int mat;
-	float xspeed;
-	float zspeed;
-	bool alive;
-} Creature;
-
-Creature creatures[NUM_CREATURES];
 
 //global reference to texture FBO
 GLuint depthBuf;
@@ -127,14 +112,8 @@ static void initGL()
 	// Enable z-buffer test.
 	glEnable(GL_DEPTH_TEST);
 
-	// Initialize the obj mesh VBOs etc
-	shape = make_shared<Shape>();
-	shape->loadMesh(RESOURCE_DIR + "rat.obj");
-	shape->resize();
-	shape->init();
-
 	cylinder = make_shared<Shape>();
-	cylinder->loadMesh(RESOURCE_DIR + "cylinder3.obj");
+	cylinder->loadMesh(RESOURCE_DIR + "cylinder.obj");
 	cylinder->resize();
 	cylinder->init();
 
@@ -142,16 +121,6 @@ static void initGL()
 	sphere->loadMesh(RESOURCE_DIR + "sphere.obj");
 	sphere->resize();
 	sphere->init();
-
-	pyramid = make_shared<Shape>();
-	pyramid->loadMesh(RESOURCE_DIR + "sqtri.obj");
-	pyramid->resize();
-	pyramid->init();
-
-	bone = make_shared<Shape>();
-	bone->loadMesh(RESOURCE_DIR + "FEMUR.obj");
-	bone->resize();
-	bone->init();
 
 	//Initialize the geometry to render a quad to the screen
 	initQuad();
@@ -279,6 +248,7 @@ static void render()
 	prog->bind();
 	glUniformMatrix4fv(prog->getUniform("P"), 1, GL_FALSE, value_ptr(P->topMatrix()));
 	glUniformMatrix4fv(prog->getUniform("V"), 1, GL_FALSE, value_ptr(V));
+
 	prog->unbind();
 
 	// Draw our scene - two meshes
