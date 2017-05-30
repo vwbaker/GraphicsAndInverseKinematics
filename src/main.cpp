@@ -27,6 +27,7 @@ Look for "TODO" in this file and write new shaders
 
 const float PI = 3.14159;
 const float DEG_85 = 1.48353;
+const int NUM_COMPONENTS = 6;
 
 using namespace std;
 using namespace glm;
@@ -41,19 +42,23 @@ Texture texture2;
 int g_width = 512;
 int g_height = 512;
 int g_GiboLen = 6;
-int gMat = 0;
-int running = 0;
-bool attack = false;
-float thetaLeg = 0;
 
-float cameraX = 0, cameraY = 0, cameraZ = 0;;
-float theta = PI/2.0, phi = 0;
-float ctheta = -PI/2.0, cphi = -.2;
-float thetaAttack = 0;
-double xorig, yorig;
-int firsttime = 1;
-glm::vec3 target(0, 2.1, -2.98), eye(0, 2.1, 1.02);
-glm::vec3 cattarget(0, 0.9, -3.96), cateye(0, 0.9, -2.98); 
+double yorig;
+double phi = 0;
+bool firsttime = true;
+
+glm::vec3 target(0, 2, 0), eye(0, 3, 5);
+float theta = 0, radius = 5;
+
+typedef struct Component {
+	float angle;
+	bool selected;
+} Component;
+
+vec3 goal = vec3(0, 0, 0);
+
+Component components[NUM_COMPONENTS];
+int selectedComponent = 2;
 
 //global reference to texture FBO
 GLuint depthBuf;
@@ -65,6 +70,16 @@ GLuint GrndBuffObj, GrndNorBuffObj, GrndTexBuffObj, GIndxBuffObj;
 
 //forward declaring a useful function listed later
 void SetMaterial(shared_ptr<Program> *p, int i);
+
+void initComponents() {
+	int i;
+	for (i = 0; i < NUM_COMPONENTS; i++) {
+		components[i].angle = 0;
+		components[i].selected = false;
+	}
+	components[0].selected = true;
+	components[1].angle = PI / 4;
+}
 
 /**** geometry set up for a quad *****/
 void initQuad() {
@@ -240,6 +255,11 @@ static void render()
    	auto P = make_shared<MatrixStack>();
    	auto M = make_shared<MatrixStack>();
         glm::vec3 up(0, 1, 0);
+
+	// Recalculate eye position
+	eye.x = radius * sin(theta);
+	eye.z = radius * cos(theta);
+
 	glm::mat4 V = glm::lookAt(eye, target, up);
    	// Apply perspective projection.
    	P->pushMatrix();
@@ -249,13 +269,55 @@ static void render()
 	glUniformMatrix4fv(prog->getUniform("P"), 1, GL_FALSE, value_ptr(P->topMatrix()));
 	glUniformMatrix4fv(prog->getUniform("V"), 1, GL_FALSE, value_ptr(V));
 
-	prog->unbind();
+	// Create the base
+	SetMaterial(&prog, 5);
+	M->pushMatrix();
+		M->loadIdentity();
+		M->translate(vec3(0, 0.5, 0));
+		M->pushMatrix();
+			M->scale(vec3(1, 0.5, 1));
+			glUniformMatrix4fv(prog->getUniform("M"), 1, GL_FALSE, 
+				value_ptr(M->topMatrix()));
+		M->popMatrix();
+		cylinder->draw(prog);
+		
+		// Draw a lazy susan
+		SetMaterial(&prog, selectedComponent == 0 ? 6 : 2);
+		M->translate(vec3(0, 0.625, 0));
+		M->rotate(components[0].angle, vec3(0, 1, 0));
+		M->pushMatrix();
+			M->scale(vec3(1, 0.125, 1));
+			glUniformMatrix4fv(prog->getUniform("M"), 1, GL_FALSE, 
+				value_ptr(M->topMatrix()));
+			cylinder->draw(prog);
+		M->popMatrix();
 
-	// Draw our scene - two meshes
-	prog1->bind();
-	glUniformMatrix4fv(prog1->getUniform("P"), 1, GL_FALSE, value_ptr(P->topMatrix()));
-	glUniformMatrix4fv(prog1->getUniform("V"), 1, GL_FALSE, value_ptr(V));
-	prog1->unbind();
+		// Draw elbows 
+		int i;
+		for (i = 1; i < NUM_COMPONENTS; i++) {
+		   SetMaterial(&prog, 3);
+		   M->translate(vec3(0, 0.25, 0));
+		   M->pushMatrix();
+			M->scale(vec3(0.5, 0.5, 0.5));
+			glUniformMatrix4fv(prog->getUniform("M"), 1, GL_FALSE, 
+				value_ptr(M->topMatrix()));
+			sphere->draw(prog);
+		   M->popMatrix();
+		   SetMaterial(&prog, selectedComponent == i ? 6 : 2);
+		   M->translate(vec3(0, 0.25, 0));
+		   M->rotate(components[i].angle, vec3(0, 0, 1));
+		   M->translate(vec3(0, 0.75, 0));
+		   M->pushMatrix();
+			M->scale(vec3(0.25, 1, 0.25));
+			glUniformMatrix4fv(prog->getUniform("M"), 1, GL_FALSE, 
+				value_ptr(M->topMatrix()));
+			cylinder->draw(prog);
+		   M->popMatrix();
+		   M->translate(vec3(0, 1, 0));
+		}
+	M->popMatrix();
+
+	prog->unbind();
 
         /*draw the ground plane */
         prog2->bind();
@@ -295,39 +357,59 @@ static void error_callback(int error, const char *description) {
 	cerr << description << endl;
 }
 
+static void computeAngles(vec3 goal) {
+
+	
+
+}
+
 /* key callback */
 static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
 	if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
 		glfwSetWindowShouldClose(window, GL_TRUE);
 	}
-	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_RELEASE || 
-	  glfwGetKey(window, GLFW_KEY_S) == GLFW_RELEASE) {
-		running = 0;
-	}
-	if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-		attack = true;
+	if (key == GLFW_KEY_A && (action == GLFW_PRESS
+		|| action == GLFW_REPEAT)) {
+		theta -= 0.1;
+	} else if (key == GLFW_KEY_D && (action == GLFW_PRESS
+		|| action == GLFW_REPEAT)) {
+		theta += 0.1;
+	} else if (key == GLFW_KEY_S && (action == GLFW_PRESS
+		|| action == GLFW_REPEAT)) {
+		radius += 0.2;
+	} else if (key == GLFW_KEY_W && (action == GLFW_PRESS
+		|| action == GLFW_REPEAT)) {
+		radius -= 0.2;
+	} else if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
+		selectedComponent = ++selectedComponent % NUM_COMPONENTS;
+	} else if (key == GLFW_KEY_RIGHT && (action == GLFW_PRESS ||
+		action == GLFW_REPEAT)) {
+		components[selectedComponent].angle -= 0.1;
+	} else if (key == GLFW_KEY_LEFT && (action == GLFW_PRESS ||
+		action == GLFW_REPEAT)) {
+		components[selectedComponent].angle += 0.1;
+	} else if (key == GLFW_KEY_ENTER && action == GLFW_PRESS) {
+		scanf("%f%f%f", &goal.x, &goal.y, &goal.z);
+		computeAngles(goal);
 	}
 }
 
 static void mouse_callback(GLFWwindow *window, double xpos, double ypos) {
         if (firsttime) {
-                xorig = xpos;
                 yorig = ypos;
                 firsttime = 0;
         } else {
-                double dx = xpos - xorig, dy = yorig - ypos, scale = 2 * PI / (float) g_width;
-                theta += dx * scale;
+		double dy = yorig - ypos;
+		double scale = 2* PI / (float) g_width;
                 phi -= dy * scale;
                 phi = phi > DEG_85 ? DEG_85 : phi;
                 phi = phi < -DEG_85 ? -DEG_85 : phi;
-                xorig = xpos;
                 yorig = ypos;
-		glm::vec3 view(normalize(target - eye));
 		eye = glm::vec3(
-			cos(phi) * cos(theta) + target.x,
+			eye.x,
 			sin(phi) + target.y,
-			cos(phi) * cos(PI / 2.0 - theta) + target.z) - view * 3.0f;
+			eye.z);
         }
 }
 
@@ -439,6 +521,7 @@ int main(int argc, char **argv) {
    	glfwSetFramebufferSizeCallback(window, resize_callback);
 
 	// Initialize scene. Note geometry initialized in init now
+	initComponents();
 	initGL();
 	initGeom();
 

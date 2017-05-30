@@ -7,7 +7,6 @@ in vec2 vTexCoord;
 
 out vec4 color;
 
-uniform sampler2D catTexture;
 uniform vec3 MatAmb;
 uniform vec3 MatDif;
 uniform vec3 MatSpec;
@@ -29,7 +28,4 @@ void main()
 	Dcolor += MatSpec * pow(max(dot(halfV, normal), 0), shine) * Lcolor;
 	Dcolor += MatAmb * Lcolor;
 	color = vec4(Dcolor, 1.0);
-
-	vec4 texColor = texture(catTexture, vTexCoord);
-	color = vec4(texColor.g * Dcolor.r, texColor.b * Dcolor.g, texColor.r * Dcolor.b, 1);
 }
