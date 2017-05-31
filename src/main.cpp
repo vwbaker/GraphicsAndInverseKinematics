@@ -52,7 +52,6 @@ float theta = 0, radius = 5;
 
 typedef struct Component {
 	float angle;
-	bool selected;
 } Component;
 
 vec3 goal = vec3(0, 0, 0);
@@ -75,9 +74,7 @@ void initComponents() {
 	int i;
 	for (i = 0; i < NUM_COMPONENTS; i++) {
 		components[i].angle = 0;
-		components[i].selected = false;
 	}
-	components[0].selected = true;
 	components[1].angle = PI / 4;
 }
 
@@ -317,6 +314,17 @@ static void render()
 		}
 	M->popMatrix();
 
+	// Draw the goal
+	M->pushMatrix();
+		M->loadIdentity();
+		SetMaterial(&prog, 0);
+		M->translate(goal);
+		M->scale(vec3(0.5, 0.5, 0.5));
+		glUniformMatrix4fv(prog->getUniform("M"), 1, GL_FALSE,
+			value_ptr(M->topMatrix()));
+		sphere->draw(prog);
+	M->popMatrix();
+
 	prog->unbind();
 
         /*draw the ground plane */
@@ -359,7 +367,16 @@ static void error_callback(int error, const char *description) {
 
 static void computeAngles(vec3 goal) {
 
-	
+	if (goal.x == 0) {
+		components[0].angle = goal.z < 0 ? -PI / 2 : PI / 2;
+	} else if (goal.x < 0) {
+		components[0].angle = -atan(goal.z / goal.x);
+	} else {
+		components[0].angle = PI - atan(goal.z / goal.x);
+	}
+
+	components[1].angle = PI / 2 - asin((goal.y - 1.6) /
+		sqrt(goal.x*goal.x + pow(goal.y - 1.6, 2) + goal.z*goal.z));
 
 }
 
@@ -392,6 +409,11 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
 	} else if (key == GLFW_KEY_ENTER && action == GLFW_PRESS) {
 		scanf("%f%f%f", &goal.x, &goal.y, &goal.z);
 		computeAngles(goal);
+	} else if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+		int i;
+		for (i = 0; i < NUM_COMPONENTS; i++) {
+			printf("component %d has angle %lf\n", i, components[i].angle);
+		}
 	}
 }
 
