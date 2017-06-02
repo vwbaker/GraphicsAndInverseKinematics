@@ -27,7 +27,7 @@ Look for "TODO" in this file and write new shaders
 
 const float PI = 3.14159;
 const float DEG_85 = 1.48353;
-const int NUM_COMPONENTS = 6;
+const int NUM_COMPONENTS = 10;
 
 using namespace std;
 using namespace glm;
@@ -300,17 +300,17 @@ static void render()
 				value_ptr(M->topMatrix()));
 			sphere->draw(prog);
 		   M->popMatrix();
+
 		   SetMaterial(&prog, selectedComponent == i ? 6 : 2);
-		   M->translate(vec3(0, 0.25, 0));
 		   M->rotate(components[i].angle, vec3(0, 0, 1));
-		   M->translate(vec3(0, 0.75, 0));
+		   M->translate(vec3(0, 1.0, 0));
 		   M->pushMatrix();
 			M->scale(vec3(0.25, 1, 0.25));
 			glUniformMatrix4fv(prog->getUniform("M"), 1, GL_FALSE, 
 				value_ptr(M->topMatrix()));
 			cylinder->draw(prog);
 		   M->popMatrix();
-		   M->translate(vec3(0, 1, 0));
+		   M->translate(vec3(0, 0.75, 0));
 		}
 	M->popMatrix();
 
@@ -365,7 +365,9 @@ static void error_callback(int error, const char *description) {
 	cerr << description << endl;
 }
 
-static void computeAngles(vec3 goal) {
+float base_height = 1.4;
+static void iterativelyCalculateAngles();
+static void computeAngles() {
 
 	if (goal.x == 0) {
 		components[0].angle = goal.z < 0 ? -PI / 2 : PI / 2;
@@ -374,11 +376,24 @@ static void computeAngles(vec3 goal) {
 	} else {
 		components[0].angle = PI - atan(goal.z / goal.x);
 	}
-
-	components[1].angle = PI / 2 - asin((goal.y - 1.6) /
-		sqrt(goal.x*goal.x + pow(goal.y - 1.6, 2) + goal.z*goal.z));
+	components[1].angle = PI / 2 - asin((goal.y - base_height) /
+		sqrt(goal.x*goal.x + pow(goal.y - base_height, 2) + goal.z*goal.z));
+	int i;
+	for (i = 2; i < NUM_COMPONENTS; i++) {
+		components[i].angle = 0;
+	}
 
 }
+
+static void calculateAngles(vec2 pf, vec2 df, int n, float length) {
+	vec2 p = pf - length * df / (glm::length(df));
+	float thetaAngle = ((n - 2.0)/ ((float) n)) * 
+		acos( (glm::dot(p, df)) / ((glm::length(p))*(glm::length(df))) );
+	float thetaO = acos((glm::dot(p, pf)) / ((glm::length(p)) * (glm::length(pf))));
+	float phiAngle = (2 * thetaAngle) / ((float) (n - 2));
+	printf("\ntheta = %f, phi = %f\n", thetaO + thetaAngle, phiAngle);
+}
+
 
 /* key callback */
 static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
@@ -408,12 +423,34 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
 		components[selectedComponent].angle += 0.1;
 	} else if (key == GLFW_KEY_ENTER && action == GLFW_PRESS) {
 		scanf("%f%f%f", &goal.x, &goal.y, &goal.z);
-		computeAngles(goal);
 	} else if (key == GLFW_KEY_P && action == GLFW_PRESS) {
 		int i;
 		for (i = 0; i < NUM_COMPONENTS; i++) {
 			printf("component %d has angle %lf\n", i, components[i].angle);
 		}
+	} else if (key == GLFW_KEY_B && action == GLFW_PRESS) {
+		components[1].angle = PI / 2 - 0.095;
+		int i;
+		for (i = 2; i < NUM_COMPONENTS; i++) {
+			components[i].angle = 0.1;
+		}
+	} else if (key == GLFW_KEY_C && action == GLFW_PRESS) {
+		computeAngles();
+		/*vec2 pgoal;
+		vec2 direction;
+		printf("enter point goal: ");
+		scanf("%f %f", &pgoal.x, &pgoal.y);
+		printf("\nenter direction to approach: ");
+		scanf("%f %f", &direction.x, &direction.y);
+		calculateAngles(pgoal, direction, 3, 2.1);*/
+	} else if (key == GLFW_KEY_T && action == GLFW_PRESS) {
+		components[1].angle -= 0.1;
+		int i;
+		for (i = 2; i < NUM_COMPONENTS; i++) {
+			components[i].angle += 0.1 * 2.0 / (NUM_COMPONENTS - 2);
+		}
+	} else if (key == GLFW_KEY_I && action == GLFW_PRESS) {
+		iterativelyCalculateAngles(); 
 	}
 }
 
@@ -496,7 +533,61 @@ void SetMaterial(shared_ptr<Program> *p, int i) {
   }
 }
 
+static void iterativelyCalculateAngles() {
+	float epsilon = .1;
+	float error = 2;
+	float alpha = PI / 2 - components[1].angle;
+	float beta = 0;
+	float COMPONENT_LENGTH = 2.15;
+	float last_error = 1000;
+	vec3 pGoal = vec3(glm::length(vec2(goal.x, goal.z)), goal.y, 0);
+	while (error > epsilon) {
+		alpha += 0.01;
+		beta -= 0.02 / (NUM_COMPONENTS - 2);
+   		auto A = make_shared<MatrixStack>();
+		A->pushMatrix();
+			A->loadIdentity();
+			A->translate(vec3(0, base_height, 0));
+			A->rotate(alpha, vec3(0, 0, 1));
+			A->translate(vec3(COMPONENT_LENGTH, 0, 0));
+			mat4 top = A->topMatrix();
+			vec4 point = top * vec4(0, 0, 0, 1);
+			printf("\npoint1=(%f,%f,%f)\n", point.x, point.y, point.z);
+
+			int i;
+			for (i = 2; i < NUM_COMPONENTS; i++) {
+				A->rotate(beta, vec3(0, 0, 1));
+				A->translate(vec3(COMPONENT_LENGTH, 0, 0));
+				top = A->topMatrix();
+				point = top * vec4(0, 0, 0, 1);
+				printf("point%d=(%f,%f,%f)\n", i, point.x, point.y, point.z);
+			}
+			top = A->topMatrix();
+			point = top * vec4(0, 0, 0, 1);
+			error = glm::distance(point, vec4(pGoal, 1));
+			printf("\npoint=(%f,%f,%f)\n", point.x, point.y, point.z);
+			printf("pGoal=(%f,%f,%f)\n", pGoal.x, pGoal.y, pGoal.z);
+			printf("theta=%f, phi=%f\n", alpha, beta);
+			printf("error=%f\n\n", error);
+			if (error > last_error) {
+				break;
+			}
+			last_error = error;
+		A->popMatrix();
+	}
+	components[1].angle = PI / 2 - alpha;
+	int i;
+	for (i = 2; i < NUM_COMPONENTS; i++) {
+		components[i].angle = -beta;
+	}
+}
+
 int main(int argc, char **argv) {
+
+	goal = vec3(5, 1.375, 0);
+	computeAngles();
+	iterativelyCalculateAngles();
+
 	if(argc < 2) {
 		cout << "Please specify the resource directory." << endl;
 		return 0;
