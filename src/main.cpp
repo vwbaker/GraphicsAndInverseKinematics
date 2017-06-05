@@ -27,7 +27,7 @@ Look for "TODO" in this file and write new shaders
 
 const float PI = 3.14159;
 const float DEG_85 = 1.48353;
-const int NUM_COMPONENTS = 10;
+const int NUM_COMPONENTS = 5;
 
 using namespace std;
 using namespace glm;
@@ -534,16 +534,17 @@ void SetMaterial(shared_ptr<Program> *p, int i) {
 }
 
 static void iterativelyCalculateAngles() {
-	float epsilon = .1;
-	float error = 2;
+	float const INCREMENT = 0.01;
+	float error = 1000;
 	float alpha = PI / 2 - components[1].angle;
 	float beta = 0;
-	float COMPONENT_LENGTH = 2.15;
-	float last_error = 1000;
+	float COMPONENT_LENGTH = 2;
+	float last_error = 100000;
 	vec3 pGoal = vec3(glm::length(vec2(goal.x, goal.z)), goal.y, 0);
-	while (error > epsilon) {
-		alpha += 0.01;
-		beta -= 0.02 / (NUM_COMPONENTS - 2);
+	while (error < last_error) {
+		last_error = error;
+		alpha += INCREMENT;
+		beta -= INCREMENT * 2.0 / (NUM_COMPONENTS - 2);
    		auto A = make_shared<MatrixStack>();
 		A->pushMatrix();
 			A->loadIdentity();
@@ -568,13 +569,12 @@ static void iterativelyCalculateAngles() {
 			printf("\npoint=(%f,%f,%f)\n", point.x, point.y, point.z);
 			printf("pGoal=(%f,%f,%f)\n", pGoal.x, pGoal.y, pGoal.z);
 			printf("theta=%f, phi=%f\n", alpha, beta);
-			printf("error=%f\n\n", error);
-			if (error > last_error) {
-				break;
-			}
-			last_error = error;
+			printf("error=%f\n", error);
+			printf("last_error=%f\n\n", last_error);
 		A->popMatrix();
 	}
+	alpha -= INCREMENT;
+	beta += INCREMENT * 2.0 / (NUM_COMPONENTS - 2);
 	components[1].angle = PI / 2 - alpha;
 	int i;
 	for (i = 2; i < NUM_COMPONENTS; i++) {
@@ -583,10 +583,6 @@ static void iterativelyCalculateAngles() {
 }
 
 int main(int argc, char **argv) {
-
-	goal = vec3(5, 1.375, 0);
-	computeAngles();
-	iterativelyCalculateAngles();
 
 	if(argc < 2) {
 		cout << "Please specify the resource directory." << endl;
