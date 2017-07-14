@@ -27,7 +27,8 @@ Look for "TODO" in this file and write new shaders
 
 const float PI = 3.14159;
 const float DEG_85 = 1.48353;
-const int NUM_COMPONENTS = 5;
+const int NUM_COMPONENTS = 6;
+float COMPONENT_LENGTH = 2;
 
 using namespace std;
 using namespace glm;
@@ -366,18 +367,19 @@ static void error_callback(int error, const char *description) {
 }
 
 float base_height = 1.4;
-static void iterativelyCalculateAngles();
-static void computeAngles() {
+static vec3 iterativelyCalculateAngles(vec3 pGoal, int num_components);
+static void jacobianCalculation();
+static void computeAngles(vec3 pGoal) {
 
-	if (goal.x == 0) {
-		components[0].angle = goal.z < 0 ? -PI / 2 : PI / 2;
-	} else if (goal.x < 0) {
-		components[0].angle = -atan(goal.z / goal.x);
+	if (pGoal.x == 0) {
+		components[0].angle = pGoal.z < 0 ? -PI / 2 : PI / 2;
+	} else if (pGoal.x < 0) {
+		components[0].angle = -atan(pGoal.z / pGoal.x);
 	} else {
-		components[0].angle = PI - atan(goal.z / goal.x);
+		components[0].angle = PI - atan(pGoal.z / pGoal.x);
 	}
-	components[1].angle = PI / 2 - asin((goal.y - base_height) /
-		sqrt(goal.x*goal.x + pow(goal.y - base_height, 2) + goal.z*goal.z));
+	components[1].angle = PI / 2 - asin((pGoal.y - base_height) /
+		sqrt(pGoal.x*pGoal.x + pow(pGoal.y - base_height, 2) + pGoal.z*pGoal.z));
 	int i;
 	for (i = 2; i < NUM_COMPONENTS; i++) {
 		components[i].angle = 0;
@@ -435,7 +437,7 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
 			components[i].angle = 0.1;
 		}
 	} else if (key == GLFW_KEY_C && action == GLFW_PRESS) {
-		computeAngles();
+		computeAngles(goal);
 		/*vec2 pgoal;
 		vec2 direction;
 		printf("enter point goal: ");
@@ -450,7 +452,27 @@ static void key_callback(GLFWwindow *window, int key, int scancode, int action, 
 			components[i].angle += 0.1 * 2.0 / (NUM_COMPONENTS - 2);
 		}
 	} else if (key == GLFW_KEY_I && action == GLFW_PRESS) {
-		iterativelyCalculateAngles(); 
+		vec3 pGoal = vec3(glm::length(vec2(goal.x, goal.z)), goal.y, 0);
+		iterativelyCalculateAngles(pGoal, NUM_COMPONENTS); 
+	} else if (key == GLFW_KEY_J && action == GLFW_PRESS) {
+		jacobianCalculation();
+	} else if (key == GLFW_KEY_R && action == GLFW_PRESS) {
+		vec3 lastV;
+		scanf("%f%f", &lastV.x, &lastV.y);
+		lastV = glm::normalize(vec3(lastV.x, lastV.y, 0));
+		printf("lastVNormal=(%f,%f,%f)\n", lastV.x, lastV.y, lastV.z);
+		vec3 pGoal = vec3(glm::length(vec2(goal.x, goal.z)), goal.y, 0);
+		printf("2D goal=(%f, %f)\n", pGoal.x, pGoal.y);
+		pGoal = pGoal - (lastV * COMPONENT_LENGTH);
+		printf("pGoal=(%f, %f)\n", pGoal.x, pGoal.y);
+		computeAngles(pGoal);
+		vec3 finalDirection = iterativelyCalculateAngles(pGoal, NUM_COMPONENTS - 1);
+		finalDirection = glm::normalize(finalDirection);
+		float finalTheta = acos(glm::dot(finalDirection, lastV));
+		if (finalDirection.y < lastV.y) {
+			finalTheta = -finalTheta;
+		}
+		components[NUM_COMPONENTS - 1].angle = finalTheta;
 	}
 }
 
@@ -533,18 +555,31 @@ void SetMaterial(shared_ptr<Program> *p, int i) {
   }
 }
 
-static void iterativelyCalculateAngles() {
+static void printMatrix(mat3 input) {
+	const float *matrx = (const float *)glm::value_ptr(input);
+
+	int i, j;
+
+	for (i = 0; i < 3; i++) {
+		for (j=0; j < 3; j++) {
+			printf("%f ", matrx[i + j*3]);
+		}
+		printf("\n");
+	}
+
+}
+
+static vec3 iterativelyCalculateAngles(vec3 pGoal, int num_components) {
 	float const INCREMENT = 0.01;
 	float error = 1000;
 	float alpha = PI / 2 - components[1].angle;
 	float beta = 0;
-	float COMPONENT_LENGTH = 2;
 	float last_error = 100000;
-	vec3 pGoal = vec3(glm::length(vec2(goal.x, goal.z)), goal.y, 0);
+	vec4 lastPoint, point;
 	while (error < last_error) {
 		last_error = error;
 		alpha += INCREMENT;
-		beta -= INCREMENT * 2.0 / (NUM_COMPONENTS - 2);
+		beta -= INCREMENT * 2.0 / (num_components - 2);
    		auto A = make_shared<MatrixStack>();
 		A->pushMatrix();
 			A->loadIdentity();
@@ -552,18 +587,24 @@ static void iterativelyCalculateAngles() {
 			A->rotate(alpha, vec3(0, 0, 1));
 			A->translate(vec3(COMPONENT_LENGTH, 0, 0));
 			mat4 top = A->topMatrix();
-			vec4 point = top * vec4(0, 0, 0, 1);
+			point = top * vec4(0, 0, 0, 1);
 			printf("\npoint1=(%f,%f,%f)\n", point.x, point.y, point.z);
-
 			int i;
-			for (i = 2; i < NUM_COMPONENTS; i++) {
+			for (i = 2; i < num_components; i++) {
 				A->rotate(beta, vec3(0, 0, 1));
 				A->translate(vec3(COMPONENT_LENGTH, 0, 0));
 				top = A->topMatrix();
 				point = top * vec4(0, 0, 0, 1);
 				printf("point%d=(%f,%f,%f)\n", i, point.x, point.y, point.z);
+				if (i == num_components - 2) {
+					lastPoint = point;
+				}
 			}
 			top = A->topMatrix();
+			/*printMatrix(top);
+			top = inverse(top);
+			printf("iverse:\n");
+			printMatrix(top);*/
 			point = top * vec4(0, 0, 0, 1);
 			error = glm::distance(point, vec4(pGoal, 1));
 			printf("\npoint=(%f,%f,%f)\n", point.x, point.y, point.z);
@@ -574,15 +615,118 @@ static void iterativelyCalculateAngles() {
 		A->popMatrix();
 	}
 	alpha -= INCREMENT;
-	beta += INCREMENT * 2.0 / (NUM_COMPONENTS - 2);
+	beta += INCREMENT * 2.0 / (num_components - 2);
 	components[1].angle = PI / 2 - alpha;
 	int i;
-	for (i = 2; i < NUM_COMPONENTS; i++) {
+	for (i = 2; i < num_components; i++) {
 		components[i].angle = -beta;
 	}
+	return vec3(point - lastPoint);
+}
+
+static void jacobianCalculation() {
+
+	vec3 pGoal = vec3(glm::length(vec2(goal.x, goal.z)), goal.y - base_height, 0); /* G */
+   	auto A = make_shared<MatrixStack>();
+        float alpha = PI / 2 - components[1].angle;
+	A->pushMatrix();
+		A->loadIdentity();
+
+		A->translate(vec3(0, 0/*base_height*/, 0));
+		A->rotate(alpha, vec3(0, 0, 1));
+		A->translate(vec3(COMPONENT_LENGTH, 0, 0));
+		mat4 top = A->topMatrix();
+		vec4 point1 = top * vec4(0, 0, 0, 1), point2, point3, point;
+		printf("\npoint1=(%f,%f,%f)\n", point.x, point.y, point.z);
+
+		A->rotate(-components[2].angle, vec3(0, 0, 1));
+		A->translate(vec3(COMPONENT_LENGTH, 0, 0));
+		top = A->topMatrix();
+		point2 = top * vec4(0, 0, 0, 1);
+
+		A->rotate(-components[3].angle, vec3(0, 0, 1));
+		A->translate(vec3(COMPONENT_LENGTH, 0, 0));
+		top = A->topMatrix();
+		point3 = top * vec4(0, 0, 0, 1);
+
+		top = A->topMatrix();
+		/*printMatrix(top);
+		top = inverse(top);
+		printf("iverse:\n");
+		printMatrix(top);*/
+		point = top * vec4(0, 0, 0, 1); /* E */
+		printf("\npoint=(%f,%f,%f)\n", point.x, point.y, point.z);
+		printf("pGoal=(%f,%f,%f)\n", pGoal.x, pGoal.y, pGoal.z);
+	A->popMatrix();
+	
+	float jacob[9];
+	
+	printf("point=(%f,%f,%f)\n", point.x, point.y, point.z);
+	printf("point1=(%f,%f,%f)\n", point1.x, point1.y, point1.z);
+	printf("point2=(%f,%f,%f)\n\n", point2.x, point2.y, point2.z);
+	/*reading down first*/
+	
+	
+	jacob[0] = (glm::cross(vec3(0, 0, 1), vec3(point))).x;
+	jacob[1] = (glm::cross(vec3(0, 0, 1), vec3(point))).y;
+	jacob[2] = (glm::cross(vec3(0, 0, 1), vec3(point))).z;
+
+	jacob[3] = (glm::cross(vec3(0, 0, 1), vec3(point - point1))).x;
+	jacob[4] = (glm::cross(vec3(0, 0, 1), vec3(point - point1))).y;
+	jacob[5] = (glm::cross(vec3(0, 0, 1), vec3(point - point1))).z;
+
+	jacob[6] = (glm::cross(vec3(0, 0, 1), vec3(point - point2))).x;
+	jacob[7] = (glm::cross(vec3(0, 0, 1), vec3(point - point2))).y;
+	jacob[8] = (glm::cross(vec3(0, 0, 1), vec3(point - point2))).z;
+
+	/*reading right first*/
+/*	
+	jacob[0] = (glm::cross(vec3(0, 0, 1), vec3(point - point3))).x;
+	jacob[3] = (glm::cross(vec3(0, 0, 1), vec3(point - point3))).y;
+	jacob[6] = (glm::cross(vec3(0, 0, 1), vec3(point - point3))).z;
+
+	jacob[1] = (glm::cross(vec3(0, 0, 1), vec3(point - point2))).x;
+	jacob[4] = (glm::cross(vec3(0, 0, 1), vec3(point - point2))).y;
+	jacob[7] = (glm::cross(vec3(0, 0, 1), vec3(point - point2))).z;
+
+	jacob[2] = (glm::cross(vec3(0, 0, 1), vec3(point - point1))).x;
+	jacob[5] = (glm::cross(vec3(0, 0, 1), vec3(point - point1))).y;
+	jacob[8] = (glm::cross(vec3(0, 0, 1), vec3(point - point1))).z;
+*/
+	vec3 vVector = pGoal - vec3(point);
+	//printf("jacobx=%f\n", jacob[0]);
+	//printf("jacoby=%f\n", jacob[1]);
+	printf("jacob[4]=%f\n", jacob[4]);
+	glm::mat3 tempjacob = glm::make_mat3(jacob);
+	printMatrix(tempjacob);
+	glm::mat3 ijacob = inverse(tempjacob);
+	printMatrix(ijacob);
+	vec3 deltaTheta = ijacob * vVector;
+	printf("deltaTheta=(%f, %f, %f)\n\n", deltaTheta.x, deltaTheta.y, deltaTheta.z);
+
+	float jacob2by3[6];
+	jacob2by3[0] = (glm::cross(vec3(0, 0, 1), vec3(point))).x;
+	jacob2by3[1] = (glm::cross(vec3(0, 0, 1), vec3(point))).y;
+
+	jacob2by3[2] = (glm::cross(vec3(0, 0, 1), vec3(point - point1))).x;
+	jacob2by3[3] = (glm::cross(vec3(0, 0, 1), vec3(point - point1))).y;
+
+	jacob2by3[4] = (glm::cross(vec3(0, 0, 1), vec3(point - point2))).x;
+	jacob2by3[5] = (glm::cross(vec3(0, 0, 1), vec3(point - point2))).y;
+
+	printf("\n\npsudo inverse way:\n");
+	glm::mat2x3 matjacob2by3 = make_mat2x3(jacob2by3);
+	glm::mat3x2 matjacob3by2 = transpose(matjacob2by3);
+	tempjacob = matjacob2by3 * matjacob3by2;
+	printf("after transposing the first 2 rows and multiplying..\n");
+	printMatrix(tempjacob);
+	printf("after inverting....\n");
+	ijacob = inverse(tempjacob);
+	printMatrix(ijacob);
 }
 
 int main(int argc, char **argv) {
+
 
 	if(argc < 2) {
 		cout << "Please specify the resource directory." << endl;
